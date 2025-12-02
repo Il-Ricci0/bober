@@ -9,3 +9,5 @@ Bober is a software that:
 - 📄 Drafts blueprints (incident reports) for every fix  
 
 Because building a dam is good, but remembering how to build it is **even better**. 💪
+
+<img src="assets/this-is-fine.jpg" width="400">
