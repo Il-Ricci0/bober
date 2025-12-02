@@ -103,3 +103,5 @@ pnpm-lock.yaml
 # ========================================
 tmp/
 temp/
+.claude
+CLAUDE.MD
