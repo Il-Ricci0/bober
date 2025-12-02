@@ -43,4 +43,6 @@ Because building a dam is good, but remembering how to build it is **even better
 - The affected service is restored if resolution was performed.  
 - Users can choose to:  
   - **Only generate the report** (Agent 1)  
-  - **Generate the report and resolve the issue** (Agent 1 + Agent 2)  
+  - **Generate the report and resolve the issue** (Agent 1 + Agent 2)
+
+Agent framework reference: https://learn.microsoft.com/en-us/agent-framework/tutorials/quick-start?pivots=programming-language-csharp
