@@ -38,21 +38,64 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
         logger.LogInformation("Received incident webhook - URL: {Url}, Status Code: {StatusCode}",
             monitorEvent.Url, monitorEvent.StatusCode);
 
-        // Create agents with iteration instructions
-        var boberBuilder = new BoberBuilder(chatClient);
-        AIAgent boberAnalyzer = boberBuilder.BuildBoberAnalizer();
-        AIAgent boberSolver = boberBuilder.BuildBoberSolver();
+        // Create incident directory structure
+        var incidentContext = IncidentContext.Create(
+            Directory.GetCurrentDirectory(),
+            monitorEvent
+        );
+        logger.LogInformation("Created incident directory: {IncidentId}", incidentContext.IncidentId);
 
-        // Build workflow: Analyzer loops until complete, then Solver loops until complete
+        // Initialize tools
+        var markdownReportTool = new MarkdownReportTool(incidentContext.DirectoryPath);
+
+        // Create AIFunction instances from tools
+        var sshFunction = sshTool.ExecuteDynamic();
+        var logCommandFunction = AIFunctionFactory.Create(
+            markdownReportTool.LogCommandExecution,
+            new AIFunctionFactoryOptions
+            {
+                Name = "log_command_execution",
+                Description = "Logs an SSH command execution with reasoning and findings to the analysis report"
+            }
+        );
+        var logNoteFunction = AIFunctionFactory.Create(
+            markdownReportTool.LogNote,
+            new AIFunctionFactoryOptions
+            {
+                Name = "log_note",
+                Description = "Adds a general note or observation to the analysis report"
+            }
+        );
+        var readAnalysisFunction = AIFunctionFactory.Create(
+            markdownReportTool.ReadAnalysis,
+            new AIFunctionFactoryOptions
+            {
+                Name = "read_analysis",
+                Description = "Reads the complete analysis report"
+            }
+        );
+        var writeSummaryFunction = AIFunctionFactory.Create(
+            markdownReportTool.WriteSummary,
+            new AIFunctionFactoryOptions
+            {
+                Name = "write_summary",
+                Description = "Writes the final summary to analysis-summary.md"
+            }
+        );
+
+        // Create agents with tools
+        var boberBuilder = new BoberBuilder(chatClient);
+        AIAgent boberAnalyzer = boberBuilder.BuildBoberAnalizer([sshFunction, logCommandFunction, logNoteFunction]);
+        AIAgent boberSummarizer = boberBuilder.BuildBoberSummarizer([readAnalysisFunction, writeSummaryFunction]);
+        AIAgent boberSolver = boberBuilder.BuildBoberSolver([sshFunction, readAnalysisFunction]);
+
+        // Build workflow: Analyzer → Summarizer → optionally Solver
         var workflow = new WorkflowBuilder(boberAnalyzer)
             .AddEdge<ExecutorCompletedEvent>(boberAnalyzer, boberAnalyzer, condition: ShouldContinueAnalysis)
-            .AddEdge<ExecutorCompletedEvent>(boberAnalyzer, boberSolver, condition: IsAnalysisComplete)
-            .AddEdge<ExecutorCompletedEvent>(boberSolver, boberSolver, condition: ShouldContinueSolving)
-            .WithOutputFrom(boberSolver)
+            .AddEdge<ExecutorCompletedEvent>(boberAnalyzer, boberSummarizer, condition: IsAnalysisComplete)
+            .AddEdge<ExecutorCompletedEvent>(boberSummarizer, boberSummarizer, condition: ShouldContinueSummarizing)
+            .WithOutputFrom(boberSummarizer)
             .Build();
-
-        AnalysisReport? analysisReport = null;
-        ResolutionReport? resolutionReport = null;
 
         // Execute the workflow
         logger.LogInformation("Starting workflow execution...");
@@ -72,37 +115,16 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
 
                     if (executorComplete.ExecutorId == boberAnalyzer.Name)
                     {
-                        // Deserialize structured analysis output
-                        try
+                        if (agentResponse.Contains("ANALYSIS_COMPLETE", StringComparison.OrdinalIgnoreCase))
                         {
-                            analysisReport = JsonSerializer.Deserialize<AnalysisReport>(
-                                agentResponse,
-                                JsonSerializerOptions.Web
-                            );
-
-                            if (analysisReport?.IsComplete == true)
-                            {
-                                logger.LogInformation("Analysis phase complete, transitioning to Solver");
-                            }
-                        }
-                        catch (JsonException ex)
-                        {
-                            logger.LogWarning(ex, "Failed to deserialize analysis report, using raw response");
+                            logger.LogInformation("Analysis phase complete, transitioning to Summarizer");
                         }
                     }
-                    else if (executorComplete.ExecutorId == boberSolver.Name)
+                    else if (executorComplete.ExecutorId == boberSummarizer.Name)
                     {
-                        // Deserialize structured resolution output
-                        try
+                        if (agentResponse.Contains("SUMMARY_COMPLETE", StringComparison.OrdinalIgnoreCase))
                         {
-                            resolutionReport = JsonSerializer.Deserialize<ResolutionReport>(
-                                agentResponse,
-                                JsonSerializerOptions.Web
-                            );
-                        }
-                        catch (JsonException ex)
-                        {
-                            logger.LogWarning(ex, "Failed to deserialize resolution report, using raw response");
+                            logger.LogInformation("Summary phase complete");
                         }
                     }
                     break;
@@ -111,16 +133,32 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
 
         logger.LogInformation("Workflow completed successfully");
 
+        // Read the generated files
+        string? analysisContent = null;
+        string? summaryContent = null;
+
+        if (File.Exists(incidentContext.AnalysisFilePath))
+        {
+            analysisContent = await File.ReadAllTextAsync(incidentContext.AnalysisFilePath);
+        }
+
+        if (File.Exists(incidentContext.SummaryFilePath))
+        {
+            summaryContent = await File.ReadAllTextAsync(incidentContext.SummaryFilePath);
+        }
+
         return Results.Ok(new
         {
             status = "completed",
+            incidentId = incidentContext.IncidentId,
             incident = new
             {
                 url = monitorEvent.Url,
                 statusCode = monitorEvent.StatusCode
             },
-            analysis = analysisReport,
-            resolution = resolutionReport,
+            analysisFile = incidentContext.AnalysisFilePath,
+            summaryFile = incidentContext.SummaryFilePath,
+            summary = summaryContent,
             timestamp = DateTime.UtcNow
         });
     }
@@ -145,20 +183,11 @@ static bool ShouldContinueAnalysis(ExecutorCompletedEvent? evt)
 
     var response = evt.Data?.ToString() ?? string.Empty;
 
-    // Try to deserialize and check IsComplete flag
-    try
-    {
-        var report = JsonSerializer.Deserialize<AnalysisReport>(response, JsonSerializerOptions.Web);
-        return report?.IsComplete != true;
-    }
-    catch
-    {
-        // Fallback: continue if we can't parse
-        return true;
-    }
+    // Continue if analysis is not complete
+    return !response.Contains("ANALYSIS_COMPLETE", StringComparison.OrdinalIgnoreCase);
 }
 
-// Workflow condition: Is Analyzer complete and ready to move to Solver?
+// Workflow condition: Is Analyzer complete and ready to move to Summarizer?
 static bool IsAnalysisComplete(ExecutorCompletedEvent? evt)
 {
     if (evt == null)
@@ -166,36 +195,18 @@ static bool IsAnalysisComplete(ExecutorCompletedEvent? evt)
 
     var response = evt.Data?.ToString() ?? string.Empty;
 
-    // Try to deserialize and check IsComplete flag
-    try
-    {
-        var report = JsonSerializer.Deserialize<AnalysisReport>(response, JsonSerializerOptions.Web);
-        return report?.IsComplete == true;
-    }
-    catch
-    {
-        // Fallback: don't transition if we can't parse
-        return false;
-    }
+    // Move to Summarizer when analysis is complete
+    return response.Contains("ANALYSIS_COMPLETE", StringComparison.OrdinalIgnoreCase);
 }
 
-// Workflow condition: Should Solver continue iterating?
-static bool ShouldContinueSolving(ExecutorCompletedEvent? evt)
+// Workflow condition: Should Summarizer continue iterating?
+static bool ShouldContinueSummarizing(ExecutorCompletedEvent? evt)
 {
     if (evt == null)
         return false;
 
     var response = evt.Data?.ToString() ?? string.Empty;
 
-    // Try to deserialize and check IsComplete flag
-    try
-    {
-        var report = JsonSerializer.Deserialize<ResolutionReport>(response, JsonSerializerOptions.Web);
-        return report?.IsComplete != true;
-    }
-    catch
-    {
-        // Fallback: continue if we can't parse
-        return true;
-    }
+    // Continue if summary is not complete
+    return !response.Contains("SUMMARY_COMPLETE", StringComparison.OrdinalIgnoreCase);
 }
