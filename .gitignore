@@ -1,0 +1,105 @@
+# ========================================
+# Global
+# ========================================
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor settings
+.vscode/
+.idea/
+
+# Environment variables
+.env
+*.env
+.env.*
+
+# Logs
+*.log
+
+# ========================================
+# .NET / C# Backend
+# ========================================
+
+# Build results
+bin/
+obj/
+out/
+Debug/
+Release/
+
+# Visual Studio files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Mono
+*.pidb
+*.userprefs
+
+# NuGet
+*.nupkg
+packages/
+.nuget/
+
+# ASP.NET scaffolding
+ScaffoldingReadMe.txt
+
+# Entity Framework
+Migrations/
+
+# Publish outputs
+publish/
+*.pubxml
+*.pubxml.user
+
+# Temporary files
+*.tmp
+*.temp
+
+# Cache
+.vs/
+_ReSharper*/
+*.[Rr]e[Ss]harper
+*.DotSettings.user
+
+# JetBrains Rider
+.idea/
+
+# ========================================
+# Angular Frontend
+# ========================================
+
+# compiled output
+dist/
+build/
+out/
+
+# dependencies
+node_modules/
+
+# Angular cache
+.angular/
+.angular/cache/
+
+# Temporary files
+*.temp
+*.tmp
+
+# Package managers
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# TypeScript
+*.tsbuildinfo
+
+# IDE
+*.iml
+
+# ========================================
+# Misc
+# ========================================
+tmp/
+temp/
