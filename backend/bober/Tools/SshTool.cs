@@ -1,39 +1,63 @@
+using Bober.Models;
+using Microsoft.Extensions.AI;
 using Renci.SshNet;
 
 namespace Bober.Tools;
 
-public class SshTool
+public class SshTool : AITool
 {
-    private readonly Renci.SshNet.ConnectionInfo _connection;
+    private readonly List<SshCredential> _credentialPool;
 
-    public SshTool(string host, string username, string password)
+    public SshTool(List<SshCredential> credentialPool)
     {
-        _connection = new PasswordConnectionInfo(
-            host,
-            username,
-            password
-        );
+        _credentialPool = credentialPool;
     }
 
-    public SshTool(string host, string username, string privateKeyPath, string? passphrase = null)
-    {
-        var keyFile = passphrase == null
-            ? new PrivateKeyFile(privateKeyPath)
-            : new PrivateKeyFile(privateKeyPath, passphrase);
+    // Tool metadata
+    public override string Name => "SSH Tool";
+    public override string Description => "Executes commands on remote servers via SSH using credentials from a pool";
 
-        _connection = new PrivateKeyConnectionInfo(
-            host,
-            username,
-            keyFile
+    // Expose dynamic SSH execution as an AIFunction
+    public AIFunction ExecuteDynamic()
+    {
+        return AIFunctionFactory.Create(
+            (string host, string command) =>
+            {
+                var cred = _credentialPool.FirstOrDefault(c => c.Host == host);
+                if (cred == null) throw new Exception($"No credentials found for host {host}");
+
+                Renci.SshNet.ConnectionInfo connection;
+
+                if (!string.IsNullOrEmpty(cred.Password))
+                {
+                    connection = new PasswordConnectionInfo(cred.Host, cred.Username, cred.Password);
+                }
+                else if (!string.IsNullOrEmpty(cred.PrivateKeyPath))
+                {
+                    var keyFile = cred.Passphrase == null
+                        ? new PrivateKeyFile(cred.PrivateKeyPath)
+                        : new PrivateKeyFile(cred.PrivateKeyPath, cred.Passphrase);
+
+                    connection = new PrivateKeyConnectionInfo(cred.Host, cred.Username, keyFile);
+                }
+                else
+                {
+                    throw new Exception("Invalid credentials: no password or private key provided.");
+                }
+
+                using var client = new SshClient(connection);
+                client.Connect();
+                var result = client.RunCommand(command);
+                client.Disconnect();
+
+                return result.Result;
+            },
+            new AIFunctionFactoryOptions
+            {
+                Name = "ssh_dynamic",
+                Description = "Executes a command on any host from the credential pool"
+            }
         );
-    }
-
-    public string ExecuteCommand(string command)
-    {
-        using var client = new SshClient(_connection);
-        client.Connect();
-        var result = client.RunCommand(command);
-        client.Disconnect();
-        return result.Result;
     }
 }
+
