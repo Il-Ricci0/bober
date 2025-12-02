@@ -5,6 +5,7 @@ using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using OllamaSharp;
+using System.Text.Json;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -50,8 +51,8 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
             .WithOutputFrom(boberSolver)
             .Build();
 
-        string analyzerResult = string.Empty;
-        string solverResult = string.Empty;
+        AnalysisReport? analysisReport = null;
+        ResolutionReport? resolutionReport = null;
 
         // Execute the workflow
         logger.LogInformation("Starting workflow execution...");
@@ -71,17 +72,38 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
 
                     if (executorComplete.ExecutorId == boberAnalyzer.Name)
                     {
-                        analyzerResult = agentResponse;
-
-                        // Check if transitioning to Solver phase
-                        if (agentResponse.Contains("ANALYSIS_COMPLETE", StringComparison.OrdinalIgnoreCase))
+                        // Deserialize structured analysis output
+                        try
                         {
-                            logger.LogInformation("Analysis phase complete, transitioning to Solver");
+                            analysisReport = JsonSerializer.Deserialize<AnalysisReport>(
+                                agentResponse,
+                                JsonSerializerOptions.Web
+                            );
+
+                            if (analysisReport?.IsComplete == true)
+                            {
+                                logger.LogInformation("Analysis phase complete, transitioning to Solver");
+                            }
+                        }
+                        catch (JsonException ex)
+                        {
+                            logger.LogWarning(ex, "Failed to deserialize analysis report, using raw response");
                         }
                     }
                     else if (executorComplete.ExecutorId == boberSolver.Name)
                     {
-                        solverResult = agentResponse;
+                        // Deserialize structured resolution output
+                        try
+                        {
+                            resolutionReport = JsonSerializer.Deserialize<ResolutionReport>(
+                                agentResponse,
+                                JsonSerializerOptions.Web
+                            );
+                        }
+                        catch (JsonException ex)
+                        {
+                            logger.LogWarning(ex, "Failed to deserialize resolution report, using raw response");
+                        }
                     }
                     break;
             }
@@ -97,8 +119,8 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
                 url = monitorEvent.Url,
                 statusCode = monitorEvent.StatusCode
             },
-            analysis = analyzerResult,
-            resolution = solverResult,
+            analysis = analysisReport,
+            resolution = resolutionReport,
             timestamp = DateTime.UtcNow
         });
     }
@@ -123,8 +145,17 @@ static bool ShouldContinueAnalysis(ExecutorCompletedEvent? evt)
 
     var response = evt.Data?.ToString() ?? string.Empty;
 
-    // Continue if analysis is not complete
-    return !response.Contains("ANALYSIS_COMPLETE", StringComparison.OrdinalIgnoreCase);
+    // Try to deserialize and check IsComplete flag
+    try
+    {
+        var report = JsonSerializer.Deserialize<AnalysisReport>(response, JsonSerializerOptions.Web);
+        return report?.IsComplete != true;
+    }
+    catch
+    {
+        // Fallback: continue if we can't parse
+        return true;
+    }
 }
 
 // Workflow condition: Is Analyzer complete and ready to move to Solver?
@@ -135,8 +166,17 @@ static bool IsAnalysisComplete(ExecutorCompletedEvent? evt)
 
     var response = evt.Data?.ToString() ?? string.Empty;
 
-    // Move to Solver when analysis is complete
-    return response.Contains("ANALYSIS_COMPLETE", StringComparison.OrdinalIgnoreCase);
+    // Try to deserialize and check IsComplete flag
+    try
+    {
+        var report = JsonSerializer.Deserialize<AnalysisReport>(response, JsonSerializerOptions.Web);
+        return report?.IsComplete == true;
+    }
+    catch
+    {
+        // Fallback: don't transition if we can't parse
+        return false;
+    }
 }
 
 // Workflow condition: Should Solver continue iterating?
@@ -147,6 +187,15 @@ static bool ShouldContinueSolving(ExecutorCompletedEvent? evt)
 
     var response = evt.Data?.ToString() ?? string.Empty;
 
-    // Continue if resolution is not complete
-    return !response.Contains("RESOLUTION_COMPLETE", StringComparison.OrdinalIgnoreCase);
+    // Try to deserialize and check IsComplete flag
+    try
+    {
+        var report = JsonSerializer.Deserialize<ResolutionReport>(response, JsonSerializerOptions.Web);
+        return report?.IsComplete != true;
+    }
+    catch
+    {
+        // Fallback: continue if we can't parse
+        return true;
+    }
 }
