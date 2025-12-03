@@ -1,5 +1,6 @@
 using Bober.Builders;
 using Bober.Models;
+using Bober.Services;
 using Bober.Tools;
 using Microsoft.Agents.AI;
 using Microsoft.Agents.AI.Workflows;
@@ -45,49 +46,26 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
         );
         logger.LogInformation("Created incident directory: {IncidentId}", incidentContext.IncidentId);
 
-        // Initialize tools
+        // Initialize services and tools
+        var markdownFormatter = new MarkdownFormatter();
         var markdownReportTool = new MarkdownReportTool(incidentContext.DirectoryPath);
 
-        // Create AIFunction instances from tools
+        // Create AIFunction instances - only SSH and ReadAnalysis needed
         var sshFunction = sshTool.ExecuteDynamic();
-        var logCommandFunction = AIFunctionFactory.Create(
-            markdownReportTool.LogCommandExecution,
-            new AIFunctionFactoryOptions
-            {
-                Name = "log_command_execution",
-                Description = "Logs an SSH command execution with reasoning and findings to the analysis report"
-            }
-        );
-        var logNoteFunction = AIFunctionFactory.Create(
-            markdownReportTool.LogNote,
-            new AIFunctionFactoryOptions
-            {
-                Name = "log_note",
-                Description = "Adds a general note or observation to the analysis report"
-            }
-        );
         var readAnalysisFunction = AIFunctionFactory.Create(
             markdownReportTool.ReadAnalysis,
             new AIFunctionFactoryOptions
             {
                 Name = "read_analysis",
-                Description = "Reads the complete analysis report"
-            }
-        );
-        var writeSummaryFunction = AIFunctionFactory.Create(
-            markdownReportTool.WriteSummary,
-            new AIFunctionFactoryOptions
-            {
-                Name = "write_summary",
-                Description = "Writes the final summary to analysis-summary.md"
+                Description = "Reads the complete analysis report from analysis.md"
             }
         );
 
-        // Create agents with tools
+        // Create agents with updated tool lists
         var boberBuilder = new BoberBuilder(chatClient);
-        AIAgent boberAnalyzer = boberBuilder.BuildBoberAnalizer([sshFunction, logCommandFunction, logNoteFunction]);
-        AIAgent boberSummarizer = boberBuilder.BuildBoberSummarizer([readAnalysisFunction, writeSummaryFunction]);
-        AIAgent boberSolver = boberBuilder.BuildBoberSolver([sshFunction, readAnalysisFunction]);
+        AIAgent boberAnalyzer = boberBuilder.BuildBoberAnalizer([sshFunction]);
+        AIAgent boberSummarizer = boberBuilder.BuildBoberSummarizer([readAnalysisFunction]);
+        AIAgent boberSolver = boberBuilder.BuildBoberSolver([sshFunction, readAnalysisFunction]); // Future use
 
         // Build workflow: Analyzer → Summarizer → optionally Solver
         var workflow = new WorkflowBuilder(boberAnalyzer)
@@ -104,6 +82,9 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
             $"Investigate this incident and provide a detailed analysis:\n\nURL: {monitorEvent.Url}\nStatus Code: {monitorEvent.StatusCode}"
         );
 
+        // Track iteration count for markdown formatting
+        int analyzerIterationCount = 0;
+
         // Collect results from workflow events
         foreach (WorkflowEvent evt in run.NewEvents)
         {
@@ -111,21 +92,83 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
             {
                 case ExecutorCompletedEvent executorComplete:
                     var agentResponse = executorComplete.Data?.ToString() ?? string.Empty;
-                    logger.LogInformation("{AgentId}: {Response}", executorComplete.ExecutorId, agentResponse);
 
-                    if (executorComplete.ExecutorId == boberAnalyzer.Name)
+                    try
                     {
-                        if (agentResponse.Contains("ANALYSIS_COMPLETE", StringComparison.OrdinalIgnoreCase))
+                        if (executorComplete.ExecutorId == boberAnalyzer.Name)
                         {
-                            logger.LogInformation("Analysis phase complete, transitioning to Summarizer");
+                            // Deserialize Analyzer response
+                            var analyzerResponse = JsonSerializer.Deserialize<AnalyzerIterationResponse>(
+                                agentResponse,
+                                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                            );
+
+                            if (analyzerResponse == null)
+                            {
+                                logger.LogError("Failed to deserialize Analyzer response");
+                                break;
+                            }
+
+                            analyzerIterationCount++;
+
+                            // Generate markdown and append to analysis.md
+                            string markdownEntry = markdownFormatter.FormatAnalyzerIteration(
+                                analyzerResponse,
+                                analyzerIterationCount
+                            );
+                            await File.AppendAllTextAsync(incidentContext.AnalysisFilePath, markdownEntry);
+
+                            logger.LogInformation(
+                                "Analyzer iteration {Iteration}: {Progress}% complete - {Focus} (IsComplete: {IsComplete})",
+                                analyzerIterationCount,
+                                analyzerResponse.Progress.CompletionPercentage,
+                                analyzerResponse.Progress.CurrentFocus,
+                                analyzerResponse.IsComplete
+                            );
+
+                            if (analyzerResponse.IsComplete)
+                            {
+                                logger.LogInformation("Analysis phase complete, transitioning to Summarizer");
+                            }
+                        }
+                        else if (executorComplete.ExecutorId == boberSummarizer.Name)
+                        {
+                            // Deserialize Summarizer response
+                            var summaryResponse = JsonSerializer.Deserialize<SummaryReport>(
+                                agentResponse,
+                                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                            );
+
+                            if (summaryResponse == null)
+                            {
+                                logger.LogError("Failed to deserialize Summarizer response");
+                                break;
+                            }
+
+                            if (summaryResponse.IsComplete)
+                            {
+                                // Generate and write summary markdown
+                                string summaryMarkdown = markdownFormatter.FormatSummary(
+                                    summaryResponse,
+                                    incidentContext.IncidentId,
+                                    monitorEvent.Url,
+                                    monitorEvent.StatusCode
+                                );
+                                await File.WriteAllTextAsync(incidentContext.SummaryFilePath, summaryMarkdown);
+
+                                logger.LogInformation(
+                                    "Summary complete - Severity: {Severity}, Root Cause: {RootCause}",
+                                    summaryResponse.Severity,
+                                    summaryResponse.RootCause
+                                );
+                            }
                         }
                     }
-                    else if (executorComplete.ExecutorId == boberSummarizer.Name)
+                    catch (JsonException ex)
                     {
-                        if (agentResponse.Contains("SUMMARY_COMPLETE", StringComparison.OrdinalIgnoreCase))
-                        {
-                            logger.LogInformation("Summary phase complete");
-                        }
+                        logger.LogError(ex, "JSON deserialization error for {AgentId}: {Response}",
+                            executorComplete.ExecutorId, agentResponse);
+                        // Continue workflow - don't crash on deserialization errors
                     }
                     break;
             }
@@ -183,8 +226,21 @@ static bool ShouldContinueAnalysis(ExecutorCompletedEvent? evt)
 
     var response = evt.Data?.ToString() ?? string.Empty;
 
-    // Continue if analysis is not complete
-    return !response.Contains("ANALYSIS_COMPLETE", StringComparison.OrdinalIgnoreCase);
+    try
+    {
+        var analyzerResponse = JsonSerializer.Deserialize<AnalyzerIterationResponse>(
+            response,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        );
+
+        // Continue if analysis is not complete
+        return analyzerResponse?.IsComplete == false;
+    }
+    catch
+    {
+        // Safe default: continue if we can't parse
+        return true;
+    }
 }
 
 // Workflow condition: Is Analyzer complete and ready to move to Summarizer?
@@ -195,8 +251,21 @@ static bool IsAnalysisComplete(ExecutorCompletedEvent? evt)
 
     var response = evt.Data?.ToString() ?? string.Empty;
 
-    // Move to Summarizer when analysis is complete
-    return response.Contains("ANALYSIS_COMPLETE", StringComparison.OrdinalIgnoreCase);
+    try
+    {
+        var analyzerResponse = JsonSerializer.Deserialize<AnalyzerIterationResponse>(
+            response,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        );
+
+        // Move to Summarizer when analysis is complete
+        return analyzerResponse?.IsComplete == true;
+    }
+    catch
+    {
+        // Safe default: don't transition if we can't parse
+        return false;
+    }
 }
 
 // Workflow condition: Should Summarizer continue iterating?
@@ -207,6 +276,19 @@ static bool ShouldContinueSummarizing(ExecutorCompletedEvent? evt)
 
     var response = evt.Data?.ToString() ?? string.Empty;
 
-    // Continue if summary is not complete
-    return !response.Contains("SUMMARY_COMPLETE", StringComparison.OrdinalIgnoreCase);
+    try
+    {
+        var summaryResponse = JsonSerializer.Deserialize<SummaryReport>(
+            response,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+        );
+
+        // Continue if summary is not complete
+        return summaryResponse?.IsComplete == false;
+    }
+    catch
+    {
+        // Safe default: continue if we can't parse
+        return true;
+    }
 }

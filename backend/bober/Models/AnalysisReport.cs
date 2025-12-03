@@ -2,6 +2,10 @@ namespace Bober.Models;
 
 /// <summary>
 /// Structured output from Bober Analyzer containing incident analysis details
+///
+/// NOTE: This model is currently not used in the workflow.
+/// AnalyzerIterationResponse is used for iteration-based analysis.
+/// This model may be used in the future for a complete analysis report format.
 /// </summary>
 public class AnalysisReport
 {
