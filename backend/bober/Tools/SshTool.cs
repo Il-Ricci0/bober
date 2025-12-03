@@ -17,12 +17,19 @@ public class SshTool : AITool
     public override string Name => "SSH Tool";
     public override string Description => "Executes commands on remote servers via SSH using credentials from a pool";
 
-    // Expose dynamic SSH execution as an AIFunction
-    public AIFunction ExecuteDynamic()
+    // Expose dynamic SSH execution as an AIFunction with command validation
+    public AIFunction ExecuteDynamic(HashSet<string> allowedCommands, string agentType)
     {
         return AIFunctionFactory.Create(
             (string host, string command) =>
             {
+                // Validate command against allowlist
+                if (!CommandAllowlist.IsCommandAllowed(command, allowedCommands))
+                {
+                    var errorMessage = CommandAllowlist.GetRejectionMessage(command, agentType);
+                    throw new UnauthorizedAccessException(errorMessage);
+                }
+
                 var cred = _credentialPool.FirstOrDefault(c => c.Host == host);
                 if (cred == null) throw new Exception($"No credentials found for host {host}");
 
@@ -55,7 +62,7 @@ public class SshTool : AITool
             new AIFunctionFactoryOptions
             {
                 Name = "ssh_dynamic",
-                Description = "Executes a command on any host from the credential pool"
+                Description = $"Executes a command on any host from the credential pool. Only commands in the {agentType} allowlist are permitted."
             }
         );
     }

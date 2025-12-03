@@ -50,8 +50,17 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
         var markdownFormatter = new MarkdownFormatter();
         var markdownReportTool = new MarkdownReportTool(incidentContext.DirectoryPath);
 
-        // Create AIFunction instances - only SSH and ReadAnalysis needed
-        var sshFunction = sshTool.ExecuteDynamic();
+        // Create SSH functions with command allowlists
+        var sshFunctionAnalyzer = sshTool.ExecuteDynamic(
+            CommandAllowlist.AnalyzerCommands,
+            "Analyzer"
+        );
+        var sshFunctionSolver = sshTool.ExecuteDynamic(
+            CommandAllowlist.SolverCommands,
+            "Solver"
+        );
+
+        // Create ReadAnalysis function
         var readAnalysisFunction = AIFunctionFactory.Create(
             markdownReportTool.ReadAnalysis,
             new AIFunctionFactoryOptions
@@ -63,9 +72,9 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
 
         // Create agents with updated tool lists
         var boberBuilder = new BoberBuilder(chatClient);
-        AIAgent boberAnalyzer = boberBuilder.BuildBoberAnalizer([sshFunction]);
+        AIAgent boberAnalyzer = boberBuilder.BuildBoberAnalizer([sshFunctionAnalyzer]);
         AIAgent boberSummarizer = boberBuilder.BuildBoberSummarizer([readAnalysisFunction]);
-        AIAgent boberSolver = boberBuilder.BuildBoberSolver([sshFunction, readAnalysisFunction]); // Future use
+        AIAgent boberSolver = boberBuilder.BuildBoberSolver([sshFunctionSolver, readAnalysisFunction]); // Future use
 
         // Build workflow: Analyzer → Summarizer → optionally Solver
         var workflow = new WorkflowBuilder(boberAnalyzer)
