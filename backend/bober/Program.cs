@@ -17,13 +17,12 @@ var app = builder.Build();
 
 // Initialize Ollama client and tools
 var ollamaUri = new Uri("http://localhost:11434");
-string ollamaModel = "codellama:7b";
+string ollamaModel = "llama3.1:8b";
 IChatClient chatClient = new OllamaApiClient(ollamaUri, ollamaModel);
 
 var sshPool = new List<SshCredential>
 {
-    new() { Host = "server1.com", Username = "user1", Password = "pass1" },
-    new() { Host = "server2.com", Username = "user2", PrivateKeyPath = "/keys/key2.pem" }
+    new() { Host = "192.168.1.22", Username = "ubuntu", Password = "ubuntu" },
 };
 
 var sshTool = new SshTool(sshPool);
@@ -93,18 +92,30 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
 
         // Track iteration count for markdown formatting
         int analyzerIterationCount = 0;
+        string currentAgentResponse = string.Empty;
 
         // Collect results from workflow events
         foreach (WorkflowEvent evt in run.NewEvents)
         {
             switch (evt)
             {
+                case AgentRunUpdateEvent agentUpdate:
+                    if (agentUpdate.Update != null)
+                    {
+                        var updateContent = agentUpdate.Update.ToString() ?? string.Empty;
+                        if (!string.IsNullOrWhiteSpace(updateContent))
+                        {
+                            currentAgentResponse = updateContent;
+                        }
+                    }
+                    break;
+
                 case ExecutorCompletedEvent executorComplete:
-                    var agentResponse = executorComplete.Data?.ToString() ?? string.Empty;
+                    var agentResponse = currentAgentResponse;
 
                     try
                     {
-                        if (executorComplete.ExecutorId == boberAnalyzer.Name)
+                        if (executorComplete.ExecutorId?.Contains("Analyzer") == true)
                         {
                             // Deserialize Analyzer response
                             var analyzerResponse = JsonSerializer.Deserialize<AnalyzerIterationResponse>(
@@ -140,7 +151,7 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
                                 logger.LogInformation("Analysis phase complete, transitioning to Summarizer");
                             }
                         }
-                        else if (executorComplete.ExecutorId == boberSummarizer.Name)
+                        else if (executorComplete.ExecutorId?.Contains("Summarizer") == true)
                         {
                             // Deserialize Summarizer response
                             var summaryResponse = JsonSerializer.Deserialize<SummaryReport>(
@@ -179,6 +190,8 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
                             executorComplete.ExecutorId, agentResponse);
                         // Continue workflow - don't crash on deserialization errors
                     }
+
+                    currentAgentResponse = string.Empty;
                     break;
             }
         }

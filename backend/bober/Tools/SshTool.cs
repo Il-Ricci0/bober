@@ -20,6 +20,9 @@ public class SshTool : AITool
     // Expose dynamic SSH execution as an AIFunction with command validation
     public AIFunction ExecuteDynamic(HashSet<string> allowedCommands, string agentType)
     {
+        // Build list of available hosts for the description
+        var availableHosts = string.Join(", ", _credentialPool.Select(c => c.Host));
+
         return AIFunctionFactory.Create(
             (string host, string command) =>
             {
@@ -62,7 +65,13 @@ public class SshTool : AITool
             new AIFunctionFactoryOptions
             {
                 Name = "ssh_dynamic",
-                Description = $"Executes a command on any host from the credential pool. Only commands in the {agentType} allowlist are permitted."
+                Description = $@"Executes a command on a remote server via SSH.
+
+Parameters:
+- host (required): The IP address or hostname. Available hosts: {availableHosts}
+- command (required): The shell command to execute
+
+Only commands in the {agentType} allowlist are permitted."
             }
         );
     }
