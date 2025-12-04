@@ -77,6 +77,8 @@ app.MapPost("/webhook/incident", async (MonitorEvent monitorEvent, ILogger<Progr
 
         // Build workflow: Analyzer → Summarizer → optionally Solver
         var workflow = new WorkflowBuilder(boberAnalyzer)
+            // Consider using a custom agent executor: https://learn.microsoft.com/en-us/agent-framework/user-guide/workflows/using-agents?pivots=programming-language-csharp
+            // And agent threads: https://learn.microsoft.com/en-us/agent-framework/user-guide/agents/multi-turn-conversation?pivots=programming-language-csharp.
             .AddEdge<ExecutorCompletedEvent>(boberAnalyzer, boberAnalyzer, condition: ShouldContinueAnalysis)
             .AddEdge<ExecutorCompletedEvent>(boberAnalyzer, boberSummarizer, condition: IsAnalysisComplete)
             .AddEdge<ExecutorCompletedEvent>(boberSummarizer, boberSummarizer, condition: ShouldContinueSummarizing)
