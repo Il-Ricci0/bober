@@ -1,16 +1,17 @@
 <div class="webhook-tester">
   <div class="container">
-    <h1>Bober Webhook Tester</h1>
-    <p class="subtitle">Test the incident webhook endpoint</p>
+    <h1>Bober Incident Response</h1>
+    <p class="subtitle">Monitor and manage incident workflows</p>
 
     <div class="form-card">
+      <h2>Create New Incident</h2>
       <div class="form-group">
         <label for="apiEndpoint">API Endpoint</label>
         <input
           type="text"
           id="apiEndpoint"
           [(ngModel)]="apiEndpoint"
-          placeholder="http://localhost:5000/webhook/incident"
+          placeholder="http://localhost:5250/webhook/incident"
           class="input"
         />
       </div>
@@ -45,9 +46,9 @@
         >
           @if (isLoading()) {
             <span class="spinner"></span>
-            Sending...
+            Creating...
           } @else {
-            Send Webhook
+            Create Incident
           }
         </button>
         <button
@@ -60,47 +61,85 @@
       </div>
     </div>
 
-    @if (response()) {
-      <div class="response-card success">
-        <h3>Success!</h3>
-        <div class="response-content">
-          <div class="response-item">
-            <strong>Status:</strong>
-            <span class="badge badge-success">{{ response()!.status }}</span>
-          </div>
-          <div class="response-item">
-            <strong>Incident ID:</strong>
-            <code>{{ response()!.incidentId }}</code>
-          </div>
-          <div class="response-item">
-            <strong>URL:</strong>
-            <span>{{ response()!.incident.url }}</span>
-          </div>
-          <div class="response-item">
-            <strong>Status Code:</strong>
-            <span>{{ response()!.incident.statusCode }}</span>
-          </div>
-          <div class="response-item">
-            <strong>Directory:</strong>
-            <code>{{ response()!.directoryPath }}</code>
-          </div>
-          <div class="response-item">
-            <strong>Message:</strong>
-            <p>{{ response()!.message }}</p>
-          </div>
-          <div class="response-item">
-            <strong>Timestamp:</strong>
-            <span>{{ response()!.timestamp }}</span>
-          </div>
-        </div>
-      </div>
-    }
-
     @if (error()) {
       <div class="response-card error">
         <h3>Error</h3>
         <p>{{ error() }}</p>
       </div>
     }
+
+    <!-- Workflows Section -->
+    <div class="workflows-section">
+      <h2>Active Workflows ({{ workflows().length }})</h2>
+
+      @if (workflows().length === 0) {
+        <div class="empty-state">
+          <p>No workflows running. Create an incident to start a workflow.</p>
+        </div>
+      } @else {
+        <div class="workflows-grid">
+          @for (workflow of workflows(); track workflow.incidentId) {
+            <div class="workflow-card" [class]="getStateClass(workflow.state)">
+              <div class="workflow-header">
+                <div class="workflow-title">
+                  <h3>{{ workflow.incidentId }}</h3>
+                  <span class="badge" [ngClass]="getStateBadgeClass(workflow.state)">
+                    {{ getStateLabel(workflow.state) }}
+                  </span>
+                </div>
+                @if (canCancel(workflow.state)) {
+                  <button
+                    class="btn-stop"
+                    (click)="cancelWorkflow(workflow.incidentId)"
+                    title="Cancel workflow"
+                  >
+                    Stop
+                  </button>
+                }
+              </div>
+
+              <div class="workflow-details">
+                <div class="detail-row">
+                  <span class="label">Phase:</span>
+                  <span class="value">{{ workflow.currentPhase }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">URL:</span>
+                  <span class="value">{{ workflow.monitorEvent.url || workflow.monitorEvent.Url }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">Status Code:</span>
+                  <span class="value">{{ workflow.monitorEvent.statusCode || workflow.monitorEvent.StatusCode }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">Analyzer Iterations:</span>
+                  <span class="value">{{ workflow.analyzerIterations }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">Summarizer Iterations:</span>
+                  <span class="value">{{ workflow.summarizerIterations }}</span>
+                </div>
+                <div class="detail-row">
+                  <span class="label">Started:</span>
+                  <span class="value">{{ workflow.startTime | date: 'short' }}</span>
+                </div>
+                @if (workflow.endTime) {
+                  <div class="detail-row">
+                    <span class="label">Ended:</span>
+                    <span class="value">{{ workflow.endTime | date: 'short' }}</span>
+                  </div>
+                }
+                @if (workflow.errorMessage) {
+                  <div class="detail-row error-message">
+                    <span class="label">Error:</span>
+                    <span class="value">{{ workflow.errorMessage }}</span>
+                  </div>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
   </div>
 </div>

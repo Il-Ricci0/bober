@@ -12,6 +12,7 @@ public class IncidentWorkflowService
     private readonly IChatClient _chatClient;
     private readonly SshTool _sshTool;
     private readonly MarkdownFormatter _markdownFormatter;
+    private readonly WorkflowTracker _workflowTracker;
     private readonly ILogger<IncidentWorkflowService> _logger;
     private const int MaxAnalyzerIterations = 20;
     private const int MaxSummarizerIterations = 5;
@@ -20,19 +21,24 @@ public class IncidentWorkflowService
         IChatClient chatClient,
         SshTool sshTool,
         MarkdownFormatter markdownFormatter,
+        WorkflowTracker workflowTracker,
         ILogger<IncidentWorkflowService> logger)
     {
         _chatClient = chatClient;
         _sshTool = sshTool;
         _markdownFormatter = markdownFormatter;
+        _workflowTracker = workflowTracker;
         _logger = logger;
     }
 
     public async Task ExecuteWorkflowAsync(MonitorEvent monitorEvent, IncidentContext incidentContext)
     {
+        var cancellationToken = _workflowTracker.GetCancellationToken(incidentContext.IncidentId);
+
         try
         {
             _logger.LogInformation("Starting incident response for {IncidentId}", incidentContext.IncidentId);
+            _workflowTracker.UpdatePhase(incidentContext.IncidentId, "Initializing");
 
             // Initialize tools
             var markdownReportTool = new MarkdownReportTool(incidentContext.DirectoryPath);
@@ -60,17 +66,36 @@ public class IncidentWorkflowService
 
             // Phase 1: Run Analyzer loop
             _logger.LogInformation("Starting analysis phase...");
-            await RunAnalyzerLoopAsync(boberAnalyzer, monitorEvent, incidentContext);
+            _workflowTracker.UpdatePhase(incidentContext.IncidentId, "Analysis");
+            await RunAnalyzerLoopAsync(boberAnalyzer, monitorEvent, incidentContext, cancellationToken);
+
+            // Check if cancelled
+            if (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogWarning("Workflow cancelled for {IncidentId}", incidentContext.IncidentId);
+                return;
+            }
 
             // Phase 2: Run Summarizer loop
             _logger.LogInformation("Starting summarization phase...");
-            await RunSummarizerLoopAsync(boberSummarizer, monitorEvent, incidentContext);
+            _workflowTracker.UpdatePhase(incidentContext.IncidentId, "Summarization");
+            await RunSummarizerLoopAsync(boberSummarizer, monitorEvent, incidentContext, cancellationToken);
 
-            _logger.LogInformation("Incident response completed for {IncidentId}", incidentContext.IncidentId);
+            if (!cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("Incident response completed for {IncidentId}", incidentContext.IncidentId);
+                _workflowTracker.MarkCompleted(incidentContext.IncidentId);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            _logger.LogWarning("Workflow cancelled for {IncidentId}", incidentContext.IncidentId);
+            _workflowTracker.MarkCancelled(incidentContext.IncidentId);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error executing incident response for {IncidentId}", incidentContext.IncidentId);
+            _workflowTracker.MarkFailed(incidentContext.IncidentId, ex.Message);
             throw;
         }
     }
@@ -78,7 +103,8 @@ public class IncidentWorkflowService
     private async Task RunAnalyzerLoopAsync(
         AIAgent analyzer,
         MonitorEvent monitorEvent,
-        IncidentContext incidentContext)
+        IncidentContext incidentContext,
+        CancellationToken cancellationToken)
     {
         // Create a new thread for this conversation
         AgentThread thread = analyzer.GetNewThread();
@@ -89,9 +115,10 @@ public class IncidentWorkflowService
         // Initial prompt
         string userPrompt = $"Investigate this incident and provide a detailed analysis:\n\nURL: {monitorEvent.Url}\nStatus Code: {monitorEvent.StatusCode}";
 
-        while (!isComplete && iterationCount < MaxAnalyzerIterations)
+        while (!isComplete && iterationCount < MaxAnalyzerIterations && !cancellationToken.IsCancellationRequested)
         {
             iterationCount++;
+            _workflowTracker.UpdateAnalyzerIteration(incidentContext.IncidentId, iterationCount);
             _logger.LogInformation("Analyzer iteration {Iteration}", iterationCount);
 
             // Run the agent with the thread
@@ -169,7 +196,8 @@ public class IncidentWorkflowService
     private async Task RunSummarizerLoopAsync(
         AIAgent summarizer,
         MonitorEvent monitorEvent,
-        IncidentContext incidentContext)
+        IncidentContext incidentContext,
+        CancellationToken cancellationToken)
     {
         // Create a new thread for this conversation
         AgentThread thread = summarizer.GetNewThread();
@@ -180,9 +208,10 @@ public class IncidentWorkflowService
         // Initial prompt
         string userPrompt = "Read the analysis report and create a comprehensive summary of the incident investigation.";
 
-        while (!isComplete && iterationCount < MaxSummarizerIterations)
+        while (!isComplete && iterationCount < MaxSummarizerIterations && !cancellationToken.IsCancellationRequested)
         {
             iterationCount++;
+            _workflowTracker.UpdateSummarizerIteration(incidentContext.IncidentId, iterationCount);
             _logger.LogInformation("Summarizer iteration {Iteration}", iterationCount);
 
             // Run the agent with the thread
