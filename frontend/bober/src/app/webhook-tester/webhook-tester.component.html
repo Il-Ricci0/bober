@@ -1,0 +1,106 @@
+<div class="webhook-tester">
+  <div class="container">
+    <h1>Bober Webhook Tester</h1>
+    <p class="subtitle">Test the incident webhook endpoint</p>
+
+    <div class="form-card">
+      <div class="form-group">
+        <label for="apiEndpoint">API Endpoint</label>
+        <input
+          type="text"
+          id="apiEndpoint"
+          [(ngModel)]="apiEndpoint"
+          placeholder="http://localhost:5000/webhook/incident"
+          class="input"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="url">Monitor URL</label>
+        <input
+          type="text"
+          id="url"
+          [(ngModel)]="url"
+          placeholder="http://192.168.1.22:80/"
+          class="input"
+        />
+      </div>
+
+      <div class="form-group">
+        <label for="statusCode">Status Code</label>
+        <input
+          type="text"
+          id="statusCode"
+          [(ngModel)]="statusCode"
+          placeholder="404"
+          class="input"
+        />
+      </div>
+
+      <div class="button-group">
+        <button
+          class="btn btn-primary"
+          (click)="sendWebhook()"
+          [disabled]="isLoading()"
+        >
+          @if (isLoading()) {
+            <span class="spinner"></span>
+            Sending...
+          } @else {
+            Send Webhook
+          }
+        </button>
+        <button
+          class="btn btn-secondary"
+          (click)="resetForm()"
+          [disabled]="isLoading()"
+        >
+          Reset
+        </button>
+      </div>
+    </div>
+
+    @if (response()) {
+      <div class="response-card success">
+        <h3>Success!</h3>
+        <div class="response-content">
+          <div class="response-item">
+            <strong>Status:</strong>
+            <span class="badge badge-success">{{ response()!.status }}</span>
+          </div>
+          <div class="response-item">
+            <strong>Incident ID:</strong>
+            <code>{{ response()!.incidentId }}</code>
+          </div>
+          <div class="response-item">
+            <strong>URL:</strong>
+            <span>{{ response()!.incident.url }}</span>
+          </div>
+          <div class="response-item">
+            <strong>Status Code:</strong>
+            <span>{{ response()!.incident.statusCode }}</span>
+          </div>
+          <div class="response-item">
+            <strong>Directory:</strong>
+            <code>{{ response()!.directoryPath }}</code>
+          </div>
+          <div class="response-item">
+            <strong>Message:</strong>
+            <p>{{ response()!.message }}</p>
+          </div>
+          <div class="response-item">
+            <strong>Timestamp:</strong>
+            <span>{{ response()!.timestamp }}</span>
+          </div>
+        </div>
+      </div>
+    }
+
+    @if (error()) {
+      <div class="response-card error">
+        <h3>Error</h3>
+        <p>{{ error() }}</p>
+      </div>
+    }
+  </div>
+</div>
