@@ -29,7 +29,7 @@ interface WebhookResponse {
 export class WebhookTesterComponent {
   url = signal('http://192.168.1.22:80/');
   statusCode = signal('404');
-  apiEndpoint = signal('http://localhost:5000/webhook/incident');
+  apiEndpoint = signal('http://localhost:5250/webhook/incident');
 
   isLoading = signal(false);
   response = signal<WebhookResponse | null>(null);
