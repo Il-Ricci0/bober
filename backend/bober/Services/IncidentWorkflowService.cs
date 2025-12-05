@@ -2,7 +2,6 @@ using Bober.Builders;
 using Bober.Models;
 using Bober.Tools;
 using Microsoft.Agents.AI;
-using Microsoft.Agents.AI.Workflows;
 using Microsoft.Extensions.AI;
 using System.Text.Json;
 
@@ -14,6 +13,8 @@ public class IncidentWorkflowService
     private readonly SshTool _sshTool;
     private readonly MarkdownFormatter _markdownFormatter;
     private readonly ILogger<IncidentWorkflowService> _logger;
+    private const int MaxAnalyzerIterations = 20;
+    private const int MaxSummarizerIterations = 5;
 
     public IncidentWorkflowService(
         IChatClient chatClient,
@@ -27,16 +28,11 @@ public class IncidentWorkflowService
         _logger = logger;
     }
 
-    private class WorkflowExecutionContext
-    {
-        public int AnalyzerIterationCount { get; set; }
-    }
-
     public async Task ExecuteWorkflowAsync(MonitorEvent monitorEvent, IncidentContext incidentContext)
     {
         try
         {
-            _logger.LogInformation("Starting workflow for incident {IncidentId}", incidentContext.IncidentId);
+            _logger.LogInformation("Starting incident response for {IncidentId}", incidentContext.IncidentId);
 
             // Initialize tools
             var markdownReportTool = new MarkdownReportTool(incidentContext.DirectoryPath);
@@ -45,10 +41,6 @@ public class IncidentWorkflowService
             var sshFunctionAnalyzer = _sshTool.ExecuteDynamic(
                 CommandAllowlist.AnalyzerCommands,
                 "Analyzer"
-            );
-            var sshFunctionSolver = _sshTool.ExecuteDynamic(
-                CommandAllowlist.SolverCommands,
-                "Solver"
             );
 
             // Create ReadAnalysis function
@@ -61,238 +53,213 @@ public class IncidentWorkflowService
                 }
             );
 
-            // Create agents with updated tool lists
+            // Create agents
             var boberBuilder = new BoberBuilder(_chatClient);
             AIAgent boberAnalyzer = boberBuilder.BuildBoberAnalizer([sshFunctionAnalyzer]);
             AIAgent boberSummarizer = boberBuilder.BuildBoberSummarizer([readAnalysisFunction]);
-            AIAgent boberSolver = boberBuilder.BuildBoberSolver([sshFunctionSolver, readAnalysisFunction]); // Future use
 
-            // Build workflow: Analyzer → Summarizer → optionally Solver
-            var workflow = new WorkflowBuilder(boberAnalyzer)
-                .AddEdge<ExecutorCompletedEvent>(boberAnalyzer, boberAnalyzer, condition: ShouldContinueAnalysis)
-                .AddEdge<ExecutorCompletedEvent>(boberAnalyzer, boberSummarizer, condition: IsAnalysisComplete)
-                .AddEdge<ExecutorCompletedEvent>(boberSummarizer, boberSummarizer, condition: ShouldContinueSummarizing)
-                .WithOutputFrom(boberSummarizer)
-                .Build();
+            // Phase 1: Run Analyzer loop
+            _logger.LogInformation("Starting analysis phase...");
+            await RunAnalyzerLoopAsync(boberAnalyzer, monitorEvent, incidentContext);
 
-            // Execute the workflow
-            _logger.LogInformation("Starting workflow execution...");
-            await using Run run = await InProcessExecution.RunAsync(
-                workflow,
-                $"Investigate this incident and provide a detailed analysis:\n\nURL: {monitorEvent.Url}\nStatus Code: {monitorEvent.StatusCode}"
-            );
+            // Phase 2: Run Summarizer loop
+            _logger.LogInformation("Starting summarization phase...");
+            await RunSummarizerLoopAsync(boberSummarizer, monitorEvent, incidentContext);
 
-            // Track execution context
-            var executionContext = new WorkflowExecutionContext();
-            string currentAgentResponse = string.Empty;
-
-            // Collect results from workflow events
-            foreach (WorkflowEvent evt in run.NewEvents)
-            {
-                switch (evt)
-                {
-                    case AgentRunUpdateEvent agentUpdate:
-                        if (agentUpdate.Update != null)
-                        {
-                            var updateContent = agentUpdate.Update.ToString() ?? string.Empty;
-                            if (!string.IsNullOrWhiteSpace(updateContent))
-                            {
-                                currentAgentResponse = updateContent;
-                            }
-                        }
-                        break;
-
-                    case ExecutorCompletedEvent executorComplete:
-                        var agentResponse = currentAgentResponse;
-
-                        try
-                        {
-                            if (executorComplete.ExecutorId?.Contains("Analyzer") == true)
-                            {
-                                await ProcessAnalyzerResponseAsync(
-                                    agentResponse,
-                                    incidentContext,
-                                    executionContext
-                                );
-                            }
-                            else if (executorComplete.ExecutorId?.Contains("Summarizer") == true)
-                            {
-                                await ProcessSummarizerResponseAsync(
-                                    agentResponse,
-                                    incidentContext,
-                                    monitorEvent
-                                );
-                            }
-                        }
-                        catch (JsonException ex)
-                        {
-                            _logger.LogError(ex, "JSON deserialization error for {AgentId}: {Response}",
-                                executorComplete.ExecutorId, agentResponse);
-                            // Continue workflow - don't crash on deserialization errors
-                        }
-
-                        currentAgentResponse = string.Empty;
-                        break;
-                }
-            }
-
-            _logger.LogInformation("Workflow completed successfully for incident {IncidentId}", incidentContext.IncidentId);
+            _logger.LogInformation("Incident response completed for {IncidentId}", incidentContext.IncidentId);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error executing workflow for incident {IncidentId}", incidentContext.IncidentId);
+            _logger.LogError(ex, "Error executing incident response for {IncidentId}", incidentContext.IncidentId);
             throw;
         }
     }
 
-    private async Task ProcessAnalyzerResponseAsync(
-        string agentResponse,
-        IncidentContext incidentContext,
-        WorkflowExecutionContext executionContext)
+    private async Task RunAnalyzerLoopAsync(
+        AIAgent analyzer,
+        MonitorEvent monitorEvent,
+        IncidentContext incidentContext)
     {
-        // Deserialize Analyzer response
-        var analyzerResponse = JsonSerializer.Deserialize<AnalyzerIterationResponse>(
-            agentResponse,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-        );
+        // Create a new thread for this conversation
+        AgentThread thread = analyzer.GetNewThread();
 
-        if (analyzerResponse == null)
+        int iterationCount = 0;
+        bool isComplete = false;
+
+        // Initial prompt
+        string userPrompt = $"Investigate this incident and provide a detailed analysis:\n\nURL: {monitorEvent.Url}\nStatus Code: {monitorEvent.StatusCode}";
+
+        while (!isComplete && iterationCount < MaxAnalyzerIterations)
         {
-            _logger.LogError("Failed to deserialize Analyzer response");
-            return;
+            iterationCount++;
+            _logger.LogInformation("Analyzer iteration {Iteration}", iterationCount);
+
+            // Run the agent with the thread
+            var response = await analyzer.RunAsync(userPrompt, thread);
+
+            // Extract the response content
+            string responseContent = string.Empty;
+            foreach (var message in response.Messages)
+            {
+                if (message.Role == ChatRole.Assistant)
+                {
+                    responseContent = message.Text ?? string.Empty;
+                    break;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(responseContent))
+            {
+                _logger.LogWarning("Analyzer iteration {Iteration} returned empty response", iterationCount);
+                break;
+            }
+
+            // Parse and process the response
+            try
+            {
+                var analyzerResponse = JsonSerializer.Deserialize<AnalyzerIterationResponse>(
+                    responseContent,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                );
+
+                if (analyzerResponse == null)
+                {
+                    _logger.LogError("Failed to deserialize Analyzer response at iteration {Iteration}", iterationCount);
+                    break;
+                }
+
+                // Generate markdown and append to analysis.md
+                string markdownEntry = _markdownFormatter.FormatAnalyzerIteration(analyzerResponse, iterationCount);
+                await File.AppendAllTextAsync(incidentContext.AnalysisFilePath, markdownEntry);
+
+                _logger.LogInformation(
+                    "Analyzer iteration {Iteration}: {Progress}% complete - {Focus} (IsComplete: {IsComplete})",
+                    iterationCount,
+                    analyzerResponse.Progress.CompletionPercentage,
+                    analyzerResponse.Progress.CurrentFocus,
+                    analyzerResponse.IsComplete
+                );
+
+                isComplete = analyzerResponse.IsComplete;
+
+                // If not complete, set up prompt for next iteration
+                if (!isComplete)
+                {
+                    userPrompt = "Continue your investigation based on the previous findings.";
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "JSON deserialization error at iteration {Iteration}: {Response}",
+                    iterationCount, responseContent);
+                break;
+            }
         }
 
-        executionContext.AnalyzerIterationCount++;
-
-        // Generate markdown and append to analysis.md
-        string markdownEntry = _markdownFormatter.FormatAnalyzerIteration(
-            analyzerResponse,
-            executionContext.AnalyzerIterationCount
-        );
-        await File.AppendAllTextAsync(incidentContext.AnalysisFilePath, markdownEntry);
-
-        _logger.LogInformation(
-            "Analyzer iteration {Iteration}: {Progress}% complete - {Focus} (IsComplete: {IsComplete})",
-            executionContext.AnalyzerIterationCount,
-            analyzerResponse.Progress.CompletionPercentage,
-            analyzerResponse.Progress.CurrentFocus,
-            analyzerResponse.IsComplete
-        );
-
-        if (analyzerResponse.IsComplete)
+        if (iterationCount >= MaxAnalyzerIterations)
         {
-            _logger.LogInformation("Analysis phase complete, transitioning to Summarizer");
+            _logger.LogWarning("Analyzer reached maximum iterations ({Max})", MaxAnalyzerIterations);
+        }
+        else
+        {
+            _logger.LogInformation("Analysis phase complete after {Count} iterations", iterationCount);
         }
     }
 
-    private async Task ProcessSummarizerResponseAsync(
-        string agentResponse,
-        IncidentContext incidentContext,
-        MonitorEvent monitorEvent)
+    private async Task RunSummarizerLoopAsync(
+        AIAgent summarizer,
+        MonitorEvent monitorEvent,
+        IncidentContext incidentContext)
     {
-        // Deserialize Summarizer response
-        var summaryResponse = JsonSerializer.Deserialize<SummaryReport>(
-            agentResponse,
-            new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-        );
+        // Create a new thread for this conversation
+        AgentThread thread = summarizer.GetNewThread();
 
-        if (summaryResponse == null)
+        int iterationCount = 0;
+        bool isComplete = false;
+
+        // Initial prompt
+        string userPrompt = "Read the analysis report and create a comprehensive summary of the incident investigation.";
+
+        while (!isComplete && iterationCount < MaxSummarizerIterations)
         {
-            _logger.LogError("Failed to deserialize Summarizer response");
-            return;
+            iterationCount++;
+            _logger.LogInformation("Summarizer iteration {Iteration}", iterationCount);
+
+            // Run the agent with the thread
+            var response = await summarizer.RunAsync(userPrompt, thread);
+
+            // Extract the response content
+            string responseContent = string.Empty;
+            foreach (var message in response.Messages)
+            {
+                if (message.Role == ChatRole.Assistant)
+                {
+                    responseContent = message.Text ?? string.Empty;
+                    break;
+                }
+            }
+
+            if (string.IsNullOrWhiteSpace(responseContent))
+            {
+                _logger.LogWarning("Summarizer iteration {Iteration} returned empty response", iterationCount);
+                break;
+            }
+
+            // Parse and process the response
+            try
+            {
+                var summaryResponse = JsonSerializer.Deserialize<SummaryReport>(
+                    responseContent,
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
+                );
+
+                if (summaryResponse == null)
+                {
+                    _logger.LogError("Failed to deserialize Summarizer response at iteration {Iteration}", iterationCount);
+                    break;
+                }
+
+                if (summaryResponse.IsComplete)
+                {
+                    // Generate and write summary markdown
+                    string summaryMarkdown = _markdownFormatter.FormatSummary(
+                        summaryResponse,
+                        incidentContext.IncidentId,
+                        monitorEvent.Url,
+                        monitorEvent.StatusCode
+                    );
+                    await File.WriteAllTextAsync(incidentContext.SummaryFilePath, summaryMarkdown);
+
+                    _logger.LogInformation(
+                        "Summary complete - Severity: {Severity}, Root Cause: {RootCause}",
+                        summaryResponse.Severity,
+                        summaryResponse.RootCause
+                    );
+
+                    isComplete = true;
+                }
+                else
+                {
+                    // Set up prompt for next iteration
+                    userPrompt = "Please complete the summary based on the analysis.";
+                }
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogError(ex, "JSON deserialization error at iteration {Iteration}: {Response}",
+                    iterationCount, responseContent);
+                break;
+            }
         }
 
-        if (summaryResponse.IsComplete)
+        if (iterationCount >= MaxSummarizerIterations)
         {
-            // Generate and write summary markdown
-            string summaryMarkdown = _markdownFormatter.FormatSummary(
-                summaryResponse,
-                incidentContext.IncidentId,
-                monitorEvent.Url,
-                monitorEvent.StatusCode
-            );
-            await File.WriteAllTextAsync(incidentContext.SummaryFilePath, summaryMarkdown);
-
-            _logger.LogInformation(
-                "Summary complete - Severity: {Severity}, Root Cause: {RootCause}",
-                summaryResponse.Severity,
-                summaryResponse.RootCause
-            );
+            _logger.LogWarning("Summarizer reached maximum iterations ({Max})", MaxSummarizerIterations);
+        }
+        else
+        {
+            _logger.LogInformation("Summarization phase complete after {Count} iterations", iterationCount);
         }
     }
 
-    // Workflow condition: Should Analyzer continue iterating?
-    private static bool ShouldContinueAnalysis(ExecutorCompletedEvent? evt)
-    {
-        if (evt == null)
-            return false;
-
-        var response = evt.Data?.ToString() ?? string.Empty;
-
-        try
-        {
-            var analyzerResponse = JsonSerializer.Deserialize<AnalyzerIterationResponse>(
-                response,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-            );
-
-            // Continue if analysis is not complete
-            return analyzerResponse?.IsComplete == false;
-        }
-        catch
-        {
-            // Safe default: continue if we can't parse
-            return true;
-        }
-    }
-
-    // Workflow condition: Is Analyzer complete and ready to move to Summarizer?
-    private static bool IsAnalysisComplete(ExecutorCompletedEvent? evt)
-    {
-        if (evt == null)
-            return false;
-
-        var response = evt.Data?.ToString() ?? string.Empty;
-
-        try
-        {
-            var analyzerResponse = JsonSerializer.Deserialize<AnalyzerIterationResponse>(
-                response,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-            );
-
-            // Move to Summarizer when analysis is complete
-            return analyzerResponse?.IsComplete == true;
-        }
-        catch
-        {
-            // Safe default: don't transition if we can't parse
-            return false;
-        }
-    }
-
-    // Workflow condition: Should Summarizer continue iterating?
-    private static bool ShouldContinueSummarizing(ExecutorCompletedEvent? evt)
-    {
-        if (evt == null)
-            return false;
-
-        var response = evt.Data?.ToString() ?? string.Empty;
-
-        try
-        {
-            var summaryResponse = JsonSerializer.Deserialize<SummaryReport>(
-                response,
-                new JsonSerializerOptions { PropertyNameCaseInsensitive = true }
-            );
-
-            // Continue if summary is not complete
-            return summaryResponse?.IsComplete == false;
-        }
-        catch
-        {
-            // Safe default: continue if we can't parse
-            return true;
-        }
-    }
 }
