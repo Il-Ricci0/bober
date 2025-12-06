@@ -2,6 +2,14 @@ import { Component, signal, OnInit, OnDestroy } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormsModule } from '@angular/forms';
 import { HttpClient } from '@angular/common/http';
+import { CardModule } from 'primeng/card';
+import { InputTextModule } from 'primeng/inputtext';
+import { ButtonModule } from 'primeng/button';
+import { MessageModule } from 'primeng/message';
+import { TagModule } from 'primeng/tag';
+import { ProgressSpinnerModule } from 'primeng/progressspinner';
+import { DividerModule } from 'primeng/divider';
+import { TooltipModule } from 'primeng/tooltip';
 
 interface MonitorEvent {
   Url: string;
@@ -48,7 +56,18 @@ interface WorkflowStatus {
 
 @Component({
   selector: 'app-webhook-tester',
-  imports: [CommonModule, FormsModule],
+  imports: [
+    CommonModule,
+    FormsModule,
+    CardModule,
+    InputTextModule,
+    ButtonModule,
+    MessageModule,
+    TagModule,
+    ProgressSpinnerModule,
+    DividerModule,
+    TooltipModule
+  ],
   templateUrl: './webhook-tester.component.html',
   styleUrl: './webhook-tester.component.scss'
 })
@@ -134,19 +153,14 @@ export class WebhookTesterComponent implements OnInit, OnDestroy {
   getStateLabel(state: WorkflowState | number): string {
     switch (state) {
       case WorkflowState.Pending:
-      case 0:
         return 'Pending';
       case WorkflowState.Running:
-      case 1:
         return 'Running';
       case WorkflowState.Completed:
-      case 2:
         return 'Completed';
       case WorkflowState.Failed:
-      case 3:
         return 'Failed';
       case WorkflowState.Cancelled:
-      case 4:
         return 'Cancelled';
       default:
         return 'Unknown';
@@ -156,16 +170,12 @@ export class WebhookTesterComponent implements OnInit, OnDestroy {
   getStateClass(state: WorkflowState | number): string {
     switch (state) {
       case WorkflowState.Running:
-      case 1:
         return 'state-running';
       case WorkflowState.Completed:
-      case 2:
         return 'state-completed';
       case WorkflowState.Failed:
-      case 3:
         return 'state-failed';
       case WorkflowState.Cancelled:
-      case 4:
         return 'state-cancelled';
       default:
         return 'state-pending';
@@ -175,19 +185,14 @@ export class WebhookTesterComponent implements OnInit, OnDestroy {
   getStateBadgeClass(state: WorkflowState | number): string {
     switch (state) {
       case WorkflowState.Pending:
-      case 0:
         return 'badge-pending';
       case WorkflowState.Running:
-      case 1:
         return 'badge-running';
       case WorkflowState.Completed:
-      case 2:
         return 'badge-completed';
       case WorkflowState.Failed:
-      case 3:
         return 'badge-failed';
       case WorkflowState.Cancelled:
-      case 4:
         return 'badge-cancelled';
       default:
         return 'badge-pending';
@@ -196,11 +201,26 @@ export class WebhookTesterComponent implements OnInit, OnDestroy {
 
   canCancel(state: WorkflowState | number): boolean {
     const result = state === WorkflowState.Pending ||
-                   state === WorkflowState.Running ||
-                   state === 0 ||
-                   state === 1;
+                   state === WorkflowState.Running;
     console.log('canCancel:', state, this.getStateLabel(state), result);
     return result;
+  }
+
+  getStateSeverity(state: WorkflowState | number): 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast' | undefined {
+    switch (state) {
+      case WorkflowState.Pending:
+        return 'secondary';
+      case WorkflowState.Running:
+        return 'info';
+      case WorkflowState.Completed:
+        return 'success';
+      case WorkflowState.Failed:
+        return 'danger';
+      case WorkflowState.Cancelled:
+        return 'warn';
+      default:
+        return 'secondary';
+    }
   }
 
   resetForm(): void {

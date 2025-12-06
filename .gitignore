@@ -107,3 +107,4 @@ temp/
 CLAUDE.MD
 test
 incidents
+.playwright-mcp

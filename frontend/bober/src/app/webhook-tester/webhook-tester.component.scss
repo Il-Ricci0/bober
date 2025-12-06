@@ -1,231 +1,104 @@
 .webhook-tester {
   min-height: 100vh;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   padding: 2rem;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  background-color: var(--surface-ground);
 }
 
 .container {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 
-h1 {
-  color: white;
-  font-size: 2.5rem;
-  font-weight: 700;
-  margin-bottom: 0.5rem;
-  text-align: center;
-}
-
-h2 {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-bottom: 1.5rem;
-  color: #333;
-}
-
-.subtitle {
-  color: rgba(255, 255, 255, 0.9);
+.header {
   text-align: center;
   margin-bottom: 2rem;
-  font-size: 1.1rem;
-}
 
-.form-card {
-  background: white;
-  border-radius: 12px;
-  padding: 2rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-  margin-bottom: 2rem;
-}
+  h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    color: var(--primary-color);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
 
-.form-group {
-  margin-bottom: 1.5rem;
+    i {
+      font-size: 2rem;
+    }
+  }
 
-  &:last-child {
-    margin-bottom: 0;
+  .subtitle {
+    color: var(--text-color-secondary);
+    font-size: 1.1rem;
   }
 }
 
-label {
-  display: block;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
-  color: #333;
-  font-size: 0.9rem;
-}
+// Form styling
+.form-grid {
+  display: grid;
+  gap: 1.5rem;
 
-.input {
-  width: 100%;
-  padding: 0.75rem;
-  border: 2px solid #e2e8f0;
-  border-radius: 8px;
-  font-size: 1rem;
-  transition: border-color 0.2s ease;
-  box-sizing: border-box;
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
 
-  &:focus {
-    outline: none;
-    border-color: #667eea;
+    label {
+      font-weight: 600;
+      color: var(--text-color);
+    }
+
+    .w-full {
+      width: 100%;
+    }
   }
 }
 
 .button-group {
   display: flex;
   gap: 1rem;
-  margin-top: 2rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
 }
 
-.btn {
-  flex: 1;
-  padding: 0.875rem 1.5rem;
-  border: none;
-  border-radius: 8px;
-  font-size: 1rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-
-  &:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-
-  &:hover:not(:disabled) {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-  }
-}
-
-.btn-secondary {
-  background: #f7fafc;
-  color: #4a5568;
-  border: 2px solid #e2e8f0;
-
-  &:hover:not(:disabled) {
-    background: #edf2f7;
-  }
-}
-
-.btn-stop {
-  padding: 0.5rem 1rem;
-  background: #f56565;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s ease;
-
-  &:hover {
-    background: #e53e3e;
-    transform: translateY(-1px);
-  }
-}
-
-.spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid rgba(255, 255, 255, 0.3);
-  border-top-color: white;
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.response-card {
-  background: white;
-  border-radius: 12px;
-  padding: 2rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-  margin-bottom: 2rem;
-
-  h3 {
-    margin-top: 0;
-    margin-bottom: 1rem;
-    font-size: 1.5rem;
-  }
-
-  &.error {
-    border-left: 4px solid #f56565;
-
-    h3 {
-      color: #f56565;
-    }
-
-    p {
-      color: #c53030;
-      font-weight: 500;
-    }
-  }
-}
-
-// Workflows Section
+// Workflows section
 .workflows-section {
-  background: white;
-  border-radius: 12px;
-  padding: 2rem;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-}
+  .section-header {
+    margin-bottom: 1.5rem;
 
-.empty-state {
-  text-align: center;
-  padding: 3rem;
-  color: #718096;
-  font-size: 1.1rem;
+    h2 {
+      font-size: 1.75rem;
+      font-weight: 600;
+      color: var(--text-color);
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+
+      i {
+        color: var(--primary-color);
+      }
+    }
+  }
+
 }
 
 .workflows-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
   gap: 1.5rem;
 }
 
-.workflow-card {
-  background: #f7fafc;
-  border-radius: 8px;
-  padding: 1.5rem;
-  border: 2px solid #e2e8f0;
-  transition: all 0.2s ease;
+// Workflow card customization
+::ng-deep {
+  .workflow-card {
+    .p-card-header {
+      padding: 0 !important;
+    }
 
-  &:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  }
-
-  &.state-running {
-    border-color: #4299e1;
-    background: #ebf8ff;
-  }
-
-  &.state-completed {
-    border-color: #48bb78;
-    background: #f0fff4;
-  }
-
-  &.state-failed {
-    border-color: #f56565;
-    background: #fff5f5;
-  }
-
-  &.state-cancelled {
-    border-color: #ed8936;
-    background: #fffaf0;
+    .p-card-body {
+      padding: 1.25rem;
+    }
   }
 }
 
@@ -233,91 +106,94 @@ label {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
-  margin-bottom: 1rem;
-  padding-bottom: 1rem;
-  border-bottom: 1px solid #e2e8f0;
-}
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--surface-border);
 
-.workflow-title {
-  flex: 1;
+  .workflow-title-section {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
 
-  h3 {
-    margin: 0 0 0.5rem 0;
-    font-size: 1rem;
-    color: #2d3748;
-    font-weight: 600;
-  }
-}
-
-.badge {
-  display: inline-block;
-  padding: 0.25rem 0.75rem;
-  border-radius: 12px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-
-  &.badge-pending {
-    background: #edf2f7;
-    color: #4a5568;
-  }
-
-  &.badge-running {
-    background: #bee3f8;
-    color: #2c5282;
-  }
-
-  &.badge-completed {
-    background: #c6f6d5;
-    color: #22543d;
-  }
-
-  &.badge-failed {
-    background: #fed7d7;
-    color: #742a2a;
-  }
-
-  &.badge-cancelled {
-    background: #feebc8;
-    color: #7c2d12;
+    h3 {
+      margin: 0;
+      font-size: 1rem;
+      color: var(--text-color);
+      font-weight: 600;
+      font-family: 'Courier New', monospace;
+    }
   }
 }
 
 .workflow-details {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-}
+  gap: 1rem;
 
-.detail-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.875rem;
+  .detail-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 0.9rem;
+    gap: 1rem;
 
-  &.error-message {
-    flex-direction: column;
-    align-items: flex-start;
-    background: #fff5f5;
-    padding: 0.75rem;
-    border-radius: 6px;
-    border-left: 3px solid #f56565;
+    .label {
+      color: var(--text-color-secondary);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      white-space: nowrap;
+
+      i {
+        color: var(--primary-color);
+        font-size: 0.875rem;
+      }
+    }
 
     .value {
-      color: #c53030;
-      font-weight: 500;
-      margin-top: 0.5rem;
+      color: var(--text-color);
+      text-align: right;
+      word-break: break-all;
+      font-family: 'Courier New', monospace;
     }
   }
+}
 
-  .label {
-    color: #718096;
-    font-weight: 600;
+// Empty state
+.empty-state-content {
+  text-align: center;
+  padding: 3rem 1rem;
+
+  p {
+    color: var(--text-color-secondary);
+    font-size: 1rem;
+  }
+}
+
+// Responsive design
+@media (max-width: 768px) {
+  .webhook-tester {
+    padding: 1rem;
   }
 
-  .value {
-    color: #2d3748;
-    text-align: right;
-    word-break: break-word;
+  .header h1 {
+    font-size: 2rem;
+  }
+
+  .workflows-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .button-group {
+    flex-direction: column;
+
+    ::ng-deep p-button {
+      width: 100%;
+
+      button {
+        width: 100%;
+      }
+    }
   }
 }

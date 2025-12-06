@@ -1,142 +1,162 @@
 <div class="webhook-tester">
   <div class="container">
-    <h1>Bober Incident Response</h1>
-    <p class="subtitle">Monitor and manage incident workflows</p>
+    <div class="header">
+      <h1><i class="pi pi-shield"></i> Bober Incident Response</h1>
+      <p class="subtitle">Monitor and manage incident workflows</p>
+    </div>
 
-    <div class="form-card">
-      <h2>Create New Incident</h2>
-      <div class="form-group">
-        <label for="apiEndpoint">API Endpoint</label>
-        <input
-          type="text"
-          id="apiEndpoint"
-          [(ngModel)]="apiEndpoint"
-          placeholder="http://localhost:5250/webhook/incident"
-          class="input"
-        />
-      </div>
+    <!-- Create New Incident Card -->
+    <p-card header="Create New Incident" [style]="{'margin-bottom': '2rem'}">
+      <div class="form-grid">
+        <div class="field">
+          <label for="apiEndpoint">API Endpoint</label>
+          <input
+            pInputText
+            type="text"
+            id="apiEndpoint"
+            [(ngModel)]="apiEndpoint"
+            placeholder="http://localhost:5250/webhook/incident"
+            class="w-full"
+          />
+        </div>
 
-      <div class="form-group">
-        <label for="url">Monitor URL</label>
-        <input
-          type="text"
-          id="url"
-          [(ngModel)]="url"
-          placeholder="http://192.168.1.22:80/"
-          class="input"
-        />
-      </div>
+        <div class="field">
+          <label for="url">Monitor URL</label>
+          <input
+            pInputText
+            type="text"
+            id="url"
+            [(ngModel)]="url"
+            placeholder="http://192.168.1.22:80/"
+            class="w-full"
+          />
+        </div>
 
-      <div class="form-group">
-        <label for="statusCode">Status Code</label>
-        <input
-          type="text"
-          id="statusCode"
-          [(ngModel)]="statusCode"
-          placeholder="404"
-          class="input"
-        />
+        <div class="field">
+          <label for="statusCode">Status Code</label>
+          <input
+            pInputText
+            type="text"
+            id="statusCode"
+            [(ngModel)]="statusCode"
+            placeholder="404"
+            class="w-full"
+          />
+        </div>
       </div>
 
       <div class="button-group">
-        <button
-          class="btn btn-primary"
-          (click)="sendWebhook()"
+        <p-button
+          label="Create Incident"
+          icon="pi pi-plus"
+          [loading]="isLoading()"
+          (onClick)="sendWebhook()"
           [disabled]="isLoading()"
-        >
-          @if (isLoading()) {
-            <span class="spinner"></span>
-            Creating...
-          } @else {
-            Create Incident
-          }
-        </button>
-        <button
-          class="btn btn-secondary"
-          (click)="resetForm()"
+          severity="primary"
+        />
+        <p-button
+          label="Reset"
+          icon="pi pi-refresh"
+          (onClick)="resetForm()"
           [disabled]="isLoading()"
-        >
-          Reset
-        </button>
+          severity="secondary"
+          [outlined]="true"
+        />
       </div>
-    </div>
+    </p-card>
 
+    <!-- Error Message -->
     @if (error()) {
-      <div class="response-card error">
-        <h3>Error</h3>
-        <p>{{ error() }}</p>
-      </div>
+      <p-message severity="error" [text]="error()!" [style]="{'margin-bottom': '2rem', 'width': '100%'}" />
     }
+
+    <p-divider />
 
     <!-- Workflows Section -->
     <div class="workflows-section">
-      <h2>Active Workflows ({{ workflows().length }})</h2>
+      <div class="section-header">
+        <h2>
+          <i class="pi pi-sitemap"></i> Active Workflows
+          <p-tag [value]="workflows().length.toString()" severity="info" />
+        </h2>
+      </div>
 
       @if (workflows().length === 0) {
-        <div class="empty-state">
-          <p>No workflows running. Create an incident to start a workflow.</p>
-        </div>
+        <p-card>
+          <div class="empty-state-content">
+            <i class="pi pi-inbox" style="font-size: 3rem; color: var(--text-color-secondary);"></i>
+            <p style="margin-top: 1.5rem;">No workflows running. Create an incident to start a workflow.</p>
+          </div>
+        </p-card>
       } @else {
         <div class="workflows-grid">
           @for (workflow of workflows(); track workflow.incidentId) {
-            <div class="workflow-card" [class]="getStateClass(workflow.state)">
-              <div class="workflow-header">
-                <div class="workflow-title">
-                  <h3>{{ workflow.incidentId }}</h3>
-                  <span class="badge" [ngClass]="getStateBadgeClass(workflow.state)">
-                    {{ getStateLabel(workflow.state) }}
-                  </span>
+            <p-card [header]="workflow.incidentId">
+              <ng-template #header>
+                <div class="workflow-header">
+                  <div class="workflow-title-section">
+                    <h3>{{ workflow.incidentId }}</h3>
+                    <p-tag
+                      [value]="getStateLabel(workflow.state)"
+                      [severity]="getStateSeverity(workflow.state)"
+                      [icon]="workflow.state === 1 ? 'pi pi-spin pi-spinner' : ''"
+                    />
+                  </div>
+                  @if (canCancel(workflow.state)) {
+                    <p-button
+                      icon="pi pi-stop"
+                      severity="danger"
+                      [outlined]="true"
+                      size="small"
+                      (onClick)="cancelWorkflow(workflow.incidentId)"
+                      [pTooltip]="'Cancel workflow'"
+                      tooltipPosition="top"
+                    />
+                  }
                 </div>
-                @if (canCancel(workflow.state)) {
-                  <button
-                    class="btn-stop"
-                    (click)="cancelWorkflow(workflow.incidentId)"
-                    title="Cancel workflow"
-                  >
-                    Stop
-                  </button>
-                }
-              </div>
+              </ng-template>
 
               <div class="workflow-details">
                 <div class="detail-row">
-                  <span class="label">Phase:</span>
+                  <span class="label"><i class="pi pi-cog"></i> Phase:</span>
                   <span class="value">{{ workflow.currentPhase }}</span>
                 </div>
                 <div class="detail-row">
-                  <span class="label">URL:</span>
+                  <span class="label"><i class="pi pi-globe"></i> URL:</span>
                   <span class="value">{{ workflow.monitorEvent.url || workflow.monitorEvent.Url }}</span>
                 </div>
                 <div class="detail-row">
-                  <span class="label">Status Code:</span>
+                  <span class="label"><i class="pi pi-info-circle"></i> Status Code:</span>
                   <span class="value">{{ workflow.monitorEvent.statusCode || workflow.monitorEvent.StatusCode }}</span>
                 </div>
                 <div class="detail-row">
-                  <span class="label">Analyzer Iterations:</span>
-                  <span class="value">{{ workflow.analyzerIterations }}</span>
+                  <span class="label"><i class="pi pi-search"></i> Analyzer Iterations:</span>
+                  <span class="value">
+                    <p-tag [value]="workflow.analyzerIterations.toString()" severity="info" />
+                  </span>
                 </div>
                 <div class="detail-row">
-                  <span class="label">Summarizer Iterations:</span>
-                  <span class="value">{{ workflow.summarizerIterations }}</span>
+                  <span class="label"><i class="pi pi-file-edit"></i> Summarizer Iterations:</span>
+                  <span class="value">
+                    <p-tag [value]="workflow.summarizerIterations.toString()" severity="info" />
+                  </span>
                 </div>
                 <div class="detail-row">
-                  <span class="label">Started:</span>
+                  <span class="label"><i class="pi pi-clock"></i> Started:</span>
                   <span class="value">{{ workflow.startTime | date: 'short' }}</span>
                 </div>
                 @if (workflow.endTime) {
                   <div class="detail-row">
-                    <span class="label">Ended:</span>
+                    <span class="label"><i class="pi pi-check-circle"></i> Ended:</span>
                     <span class="value">{{ workflow.endTime | date: 'short' }}</span>
                   </div>
                 }
                 @if (workflow.errorMessage) {
-                  <div class="detail-row error-message">
-                    <span class="label">Error:</span>
-                    <span class="value">{{ workflow.errorMessage }}</span>
-                  </div>
+                  <p-divider />
+                  <p-message severity="error" [text]="workflow.errorMessage" [style]="{'width': '100%'}" />
                 }
               </div>
-            </div>
+            </p-card>
           }
         </div>
       }
