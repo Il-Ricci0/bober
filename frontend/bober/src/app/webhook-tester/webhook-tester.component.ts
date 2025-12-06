@@ -10,6 +10,7 @@ import { TagModule } from 'primeng/tag';
 import { ProgressSpinnerModule } from 'primeng/progressspinner';
 import { DividerModule } from 'primeng/divider';
 import { TooltipModule } from 'primeng/tooltip';
+import { PanelModule } from 'primeng/panel';
 
 interface MonitorEvent {
   Url: string;
@@ -66,7 +67,8 @@ interface WorkflowStatus {
     TagModule,
     ProgressSpinnerModule,
     DividerModule,
-    TooltipModule
+    TooltipModule,
+    PanelModule
   ],
   templateUrl: './webhook-tester.component.html',
   styleUrl: './webhook-tester.component.scss'

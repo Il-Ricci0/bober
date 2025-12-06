@@ -89,13 +89,13 @@
           </div>
         </p-card>
       } @else {
-        <div class="workflows-grid">
+        <div class="flex flex-col gap-3">
           @for (workflow of workflows(); track workflow.incidentId) {
-            <p-card [header]="workflow.incidentId">
-              <ng-template #header>
-                <div class="workflow-header">
-                  <div class="workflow-title-section">
-                    <h3>{{ workflow.incidentId }}</h3>
+            <p-panel>
+              <ng-template pTemplate="header">
+                <div class="flex justify-between items-center w-full">
+                  <div class="flex items-center gap-3">
+                    <span class="text-sm font-semibold font-mono">{{ workflow.incidentId }}</span>
                     <p-tag
                       [value]="getStateLabel(workflow.state)"
                       [severity]="getStateSeverity(workflow.state)"
@@ -116,47 +116,33 @@
                 </div>
               </ng-template>
 
-              <div class="workflow-details">
-                <div class="detail-row">
-                  <span class="label"><i class="pi pi-cog"></i> Phase:</span>
-                  <span class="value">{{ workflow.currentPhase }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="label"><i class="pi pi-globe"></i> URL:</span>
-                  <span class="value">{{ workflow.monitorEvent.url || workflow.monitorEvent.Url }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="label"><i class="pi pi-info-circle"></i> Status Code:</span>
-                  <span class="value">{{ workflow.monitorEvent.statusCode || workflow.monitorEvent.StatusCode }}</span>
-                </div>
-                <div class="detail-row">
-                  <span class="label"><i class="pi pi-search"></i> Analyzer Iterations:</span>
-                  <span class="value">
-                    <p-tag [value]="workflow.analyzerIterations.toString()" severity="info" />
+              <div class="flex flex-col gap-2">
+                <div class="flex justify-between items-center">
+                  <span class="text-sm text-color-secondary flex items-center gap-2">
+                    <i class="pi pi-globe text-xs"></i> URL
                   </span>
+                  <span class="text-sm font-mono text-right break-all">{{ workflow.monitorEvent.url || workflow.monitorEvent.Url }}</span>
                 </div>
-                <div class="detail-row">
-                  <span class="label"><i class="pi pi-file-edit"></i> Summarizer Iterations:</span>
-                  <span class="value">
-                    <p-tag [value]="workflow.summarizerIterations.toString()" severity="info" />
+                <div class="flex justify-between items-center">
+                  <span class="text-sm text-color-secondary flex items-center gap-2">
+                    <i class="pi pi-clock text-xs"></i> Started
                   </span>
-                </div>
-                <div class="detail-row">
-                  <span class="label"><i class="pi pi-clock"></i> Started:</span>
-                  <span class="value">{{ workflow.startTime | date: 'short' }}</span>
+                  <span class="text-sm font-mono">{{ workflow.startTime | date: 'short' }}</span>
                 </div>
                 @if (workflow.endTime) {
-                  <div class="detail-row">
-                    <span class="label"><i class="pi pi-check-circle"></i> Ended:</span>
-                    <span class="value">{{ workflow.endTime | date: 'short' }}</span>
+                  <div class="flex justify-between items-center">
+                    <span class="text-sm text-color-secondary flex items-center gap-2">
+                      <i class="pi pi-check-circle text-xs"></i> Ended
+                    </span>
+                    <span class="text-sm font-mono">{{ workflow.endTime | date: 'short' }}</span>
                   </div>
                 }
                 @if (workflow.errorMessage) {
                   <p-divider />
-                  <p-message severity="error" [text]="workflow.errorMessage" [style]="{'width': '100%'}" />
+                  <p-message severity="error" [text]="workflow.errorMessage" styleClass="w-full" />
                 }
               </div>
-            </p-card>
+            </p-panel>
           }
         </div>
       }
