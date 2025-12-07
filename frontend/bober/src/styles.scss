@@ -1,14 +1,17 @@
+/* Tailwind CSS - must be first for proper processing */
+@import "./assets/tailwind.css";
+
 /* PrimeNG Icons */
 @import "primeicons/primeicons.css";
+
+/* PrimeFlex Grid System */
+@import "primeflex/primeflex.css";
 
 /* Sakai Layout Styles */
 @import "./assets/layout/layout.scss";
 
 /* Demo Styles */
 @import "./assets/demo/demo.scss";
-
-/* Tailwind CSS */
-@import "./assets/tailwind.css";
 
 /* Global Styles */
 * {
