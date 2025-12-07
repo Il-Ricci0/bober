@@ -1,10 +1,14 @@
-/* Tailwind CSS Base Directives */
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
-
 /* PrimeNG Icons */
 @import "primeicons/primeicons.css";
+
+/* Sakai Layout Styles */
+@import "./assets/layout/layout.scss";
+
+/* Demo Styles */
+@import "./assets/demo/demo.scss";
+
+/* Tailwind CSS */
+@import "./assets/tailwind.css";
 
 /* Global Styles */
 * {

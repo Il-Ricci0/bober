@@ -1,6 +1,15 @@
 import { Routes } from '@angular/router';
-import { WebhookTesterComponent } from './webhook-tester/webhook-tester.component';
+import { AppLayout } from './layout/component/app.layout';
+import { IncidentsComponent } from './pages/incidents/incidents.component';
 
-export const routes: Routes = [
-  { path: '', component: WebhookTesterComponent }
+export const appRoutes: Routes = [
+    {
+        path: '',
+        component: AppLayout,
+        children: [
+            { path: '', component: IncidentsComponent },
+            { path: 'incidents', component: IncidentsComponent }
+        ]
+    },
+    { path: '**', redirectTo: '/' }
 ];
